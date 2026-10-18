@@ -104,6 +104,14 @@
         BrowserHandoffHint: 'The Jellyfin Android app cannot save downloads itself, so this opens in your browser. The file is saved as stream.mp4 — rename it afterwards.',
         BrowserHandoffStarted: 'Handed to your browser — check its downloads.',
         BrowserHandoffFailed: 'Could not open your browser.',
+        SaveAsDefault: 'Save as default',
+        SavedAsDefault: 'Saved as default!',
+        SaveAsDefaultPromptTitle: 'Save as default?',
+        SaveAsDefaultPromptText: 'You selected {video} / {audio} for this download. Would you like to save this selection as your default for future downloads?',
+        SaveAsDefaultBtn: 'Save as default',
+        JustThisOnceBtn: 'Just this once',
+        AudioTrack: 'Audio track',
+        DefaultTrack: 'Default',
     };
 
     // Populated by initStrings(); null until loaded.
@@ -193,9 +201,10 @@
     function stopActiveEncoding(entry) {
         if (!entry.stopUrl) return;
         const stopUrl = entry.stopUrl;
+        const headers = entry.authHeaders || {};
         entry.stopUrl = null; // never fire twice for the same job
         try {
-            fetch(stopUrl, { method: 'DELETE', keepalive: true }).catch((err) => {
+            fetch(stopUrl, { method: 'DELETE', headers, keepalive: true }).catch((err) => {
                 console.warn('[TranscodeDownloader] failed to stop server transcode:', err);
             });
         } catch (err) {
@@ -263,9 +272,10 @@
         getApiClient(0, 10, (client) => {
             const token = client.accessToken();
             const baseUrl = client.serverAddress() || window.location.origin;
+            const headers = getAuthHeaders(client);
             due.forEach((entry) => {
                 const url = buildStopUrl(entry.baseUrl || baseUrl, entry.deviceId, entry.playSessionId, token);
-                fetch(url, { method: 'DELETE' }).catch((err) => {
+                fetch(url, { method: 'DELETE', headers }).catch((err) => {
                     console.warn('[TranscodeDownloader] deferred transcode stop failed:', err);
                 });
             });
@@ -609,6 +619,27 @@
         }
     }
 
+    function getAuthHeaders(client) {
+        if (!client) return {};
+        const token = typeof client.accessToken === 'function' ? client.accessToken() : '';
+        const headers = {};
+        if (token) {
+            headers['X-Emby-Token'] = token;
+            if (typeof client.authorizationHeader === 'function') {
+                const authHeader = client.authorizationHeader();
+                if (authHeader) headers['Authorization'] = authHeader;
+            }
+            if (!headers['Authorization']) {
+                const appName = typeof client.appName === 'function' ? client.appName() : 'Jellyfin Web';
+                const deviceName = typeof client.deviceName === 'function' ? client.deviceName() : 'Web Browser';
+                const deviceId = typeof client.deviceId === 'function' ? client.deviceId() : '';
+                const appVersion = typeof client.appVersion === 'function' ? client.appVersion() : '';
+                headers['Authorization'] = `MediaBrowser Client="${appName}", Device="${deviceName}", DeviceId="${deviceId}", Version="${appVersion}", Token="${token}"`;
+            }
+        }
+        return headers;
+    }
+
     // --- Codec capabilities ---
 
     // Jellyfin serialises with PascalCase; tolerate camelCase so the contract survives a
@@ -651,6 +682,20 @@
         }
     }
 
+    function getSavedCodec(kind) {
+        return readStoredCodec(kind === 'video' ? STORAGE_VIDEO_CODEC : STORAGE_AUDIO_CODEC) ||
+               (kind === 'video' ? DEFAULT_VIDEO_CODEC : DEFAULT_AUDIO_CODEC);
+    }
+
+    function saveCurrentCodecsAsDefault() {
+        storeCodec(STORAGE_VIDEO_CODEC, selectedVideoCodec);
+        storeCodec(STORAGE_AUDIO_CODEC, selectedAudioCodec);
+    }
+
+    function isCurrentSelectionDefault() {
+        return selectedVideoCodec === getSavedCodec('video') && selectedAudioCodec === getSavedCodec('audio');
+    }
+
     // Why a codec cannot be used, or null when it can.
     function codecBlockReason(kind, id) {
         if (!codecCapabilities) return null;
@@ -684,42 +729,59 @@
         return firstSelectableCodec(kind) || fallback;
     }
 
+    // Sets active selection for the current sheet without auto-mutating stored defaults.
     function selectCodec(kind, id) {
         if (kind === 'video') {
             selectedVideoCodec = id;
-            storeCodec(STORAGE_VIDEO_CODEC, id);
         } else {
             selectedAudioCodec = id;
-            storeCodec(STORAGE_AUDIO_CODEC, id);
         }
     }
 
-    // Fetched lazily on first quality-sheet open. Only a *successful* probe is memoised for
-    // the page session: a failed one drops the cached promise so the next sheet retries,
-    // rather than hiding the picker until the tab is reloaded.
+    const FALLBACK_CAPABILITIES_PAYLOAD = {
+        VideoCodecs: [
+            { Codec: 'h264', Encoder: 'libx264', IsHardware: false, IsSupported: true, IsAllowedByAdmin: true },
+            { Codec: 'hevc', Encoder: 'libx265', IsHardware: false, IsSupported: true, IsAllowedByAdmin: true },
+            { Codec: 'av1',  Encoder: 'libsvtav1', IsHardware: false, IsSupported: true, IsAllowedByAdmin: true },
+        ],
+        AudioCodecs: [
+            { Codec: 'aac',  Encoder: 'aac', IsHardware: false, IsSupported: true, IsAllowedByAdmin: true },
+            { Codec: 'opus', Encoder: 'libopus', IsHardware: false, IsSupported: true, IsAllowedByAdmin: true },
+        ],
+    };
+
+    // Fetched on first quality-sheet open. Probes the server controller using Jellyfin 12.2
+    // compliant auth headers; if the endpoint is unavailable or returns an error, gracefully
+    // falls back to standard client capabilities so the user is never locked out.
     function fetchCodecCapabilities() {
         if (codecCapabilitiesPromise) return codecCapabilitiesPromise;
 
-        let probeFailed = false;
-
         const probe = new Promise((resolve) => {
-            const giveUp = (err) => {
-                console.warn('[TranscodeDownloader] Codec capabilities unavailable, falling back to H.264/AAC:', err);
-                codecCapabilities = null;
-                codecCapabilitiesResolved = false;
-                selectedVideoCodec = DEFAULT_VIDEO_CODEC;
-                selectedAudioCodec = DEFAULT_AUDIO_CODEC;
-                probeFailed = true;
-                resolve();
-            };
-
             getApiClient(0, 10, async (client) => {
+                const useFallback = (reason) => {
+                    console.warn(`[TranscodeDownloader] Codec capabilities probe (${reason}), using fallback profile`);
+                    codecCapabilities = {
+                        video: parseCapabilityList(FALLBACK_CAPABILITIES_PAYLOAD.VideoCodecs),
+                        audio: parseCapabilityList(FALLBACK_CAPABILITIES_PAYLOAD.AudioCodecs),
+                    };
+                    codecCapabilitiesResolved = true;
+                    selectedVideoCodec = resolveCodecPreference('video', STORAGE_VIDEO_CODEC, DEFAULT_VIDEO_CODEC);
+                    selectedAudioCodec = resolveCodecPreference('audio', STORAGE_AUDIO_CODEC, DEFAULT_AUDIO_CODEC);
+                    resolve();
+                };
+
                 try {
                     const baseUrl = client.serverAddress() || window.location.origin;
-                    const res = await fetch(`${baseUrl}/TranscodeDownloader/Codecs?api_key=${encodeURIComponent(client.accessToken())}`);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const payload = await res.json();
+                    const token = client.accessToken();
+                    const url = `${baseUrl}/TranscodeDownloader/Codecs?api_key=${encodeURIComponent(token)}`;
+                    const res = await fetch(url, { headers: getAuthHeaders(client) });
 
+                    if (!res.ok) {
+                        useFallback(`HTTP ${res.status}`);
+                        return;
+                    }
+
+                    const payload = await res.json();
                     codecCapabilities = {
                         video: parseCapabilityList(readField(payload, 'VideoCodecs')),
                         audio: parseCapabilityList(readField(payload, 'AudioCodecs')),
@@ -729,19 +791,21 @@
                     selectedAudioCodec = resolveCodecPreference('audio', STORAGE_AUDIO_CODEC, DEFAULT_AUDIO_CODEC);
                     resolve();
                 } catch (err) {
-                    giveUp(err);
+                    useFallback(err && err.message ? err.message : String(err));
                 }
-            }, () => giveUp(new Error('ApiClient unavailable')));
+            }, () => {
+                codecCapabilities = {
+                    video: parseCapabilityList(FALLBACK_CAPABILITIES_PAYLOAD.VideoCodecs),
+                    audio: parseCapabilityList(FALLBACK_CAPABILITIES_PAYLOAD.AudioCodecs),
+                };
+                codecCapabilitiesResolved = true;
+                selectedVideoCodec = DEFAULT_VIDEO_CODEC;
+                selectedAudioCodec = DEFAULT_AUDIO_CODEC;
+                resolve();
+            });
         });
 
         codecCapabilitiesPromise = probe;
-
-        // Runs as a microtask, so it is ordered after the assignment above even when the
-        // probe fails synchronously inside the executor.
-        probe.then(() => {
-            if (probeFailed && codecCapabilitiesPromise === probe) codecCapabilitiesPromise = null;
-        });
-
         return probe;
     }
 
@@ -904,7 +968,105 @@
         return hint;
     }
 
-    function buildCodecSection(onCodecChange) {
+    function formatAudioStreamLabel(stream) {
+        const lang = stream.Language ? stream.Language.toUpperCase() : '';
+        const title = stream.Title || stream.DisplayTitle || '';
+        const channels = stream.ChannelLayout || (stream.Channels ? `${stream.Channels}ch` : '');
+        let label = title || lang || `Track ${stream.Index}`;
+        if (channels && !label.includes(channels)) {
+            label += ` (${channels})`;
+        }
+        if (stream.IsDefault) {
+            label += ` · ${t('DefaultTrack')}`;
+        }
+        return label;
+    }
+
+    function buildAudioStreamRow(audioStreams, selectedIndex, onSelect) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'margin-bottom:10px;';
+
+        const title = document.createElement('div');
+        title.style.cssText = 'font-size:13px;font-weight:600;color:#fff;opacity:0.7;margin-bottom:6px;';
+        title.textContent = t('AudioTrack');
+        wrap.appendChild(title);
+
+        const chips = document.createElement('div');
+        chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+
+        audioStreams.forEach((stream) => {
+            const selected = selectedIndex === stream.Index;
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.setAttribute('data-id', `qd-audiotrack-${stream.Index}`);
+            chip.textContent = formatAudioStreamLabel(stream);
+            chip.style.cssText = 'padding:6px 14px;border-radius:16px;font-size:13px;font-family:inherit;color:#fff;'
+                + `border:1px solid ${selected ? '#00a4dc' : '#444'};`
+                + `background:${selected ? 'rgba(0,164,220,0.2)' : 'transparent'};cursor:pointer;`;
+            chip.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            chip.addEventListener('click', () => onSelect(stream.Index));
+            chips.appendChild(chip);
+        });
+
+        wrap.appendChild(chips);
+        return wrap;
+    }
+
+    function showSaveDefaultPrompt(videoCodecId, audioCodecId, onSaveDefault, onJustOnce) {
+        const vTag = codecLabel(VIDEO_CODECS, videoCodecId);
+        const aTag = codecLabel(AUDIO_CODECS, audioCodecId);
+
+        const scrim = document.createElement('div');
+        scrim.id = 'qd-default-prompt-scrim';
+        scrim.style.cssText = 'position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);padding:16px;box-sizing:border-box;';
+
+        const modal = document.createElement('div');
+        modal.style.cssText = 'background:#1e1e1e;border:1px solid #444;border-radius:12px;padding:22px;max-width:400px;width:100%;color:#fff;font-family:inherit;box-shadow:0 12px 40px rgba(0,0,0,0.6);';
+
+        const title = document.createElement('div');
+        title.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:10px;color:#fff;';
+        title.textContent = t('SaveAsDefaultPromptTitle');
+        modal.appendChild(title);
+
+        const body = document.createElement('div');
+        body.style.cssText = 'font-size:13px;color:#bbb;line-height:1.45;margin-bottom:20px;';
+        body.textContent = t('SaveAsDefaultPromptText').replace('{video}', vTag).replace('{audio}', aTag);
+        modal.appendChild(body);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;';
+
+        const onceBtn = document.createElement('button');
+        onceBtn.type = 'button';
+        onceBtn.style.cssText = 'background:#333;color:#fff;border:1px solid #555;padding:8px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit;';
+        onceBtn.textContent = t('JustThisOnceBtn');
+        onceBtn.addEventListener('click', () => {
+            scrim.remove();
+            onJustOnce();
+        });
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.style.cssText = 'background:#00a4dc;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;';
+        saveBtn.textContent = t('SaveAsDefaultBtn');
+        saveBtn.addEventListener('click', () => {
+            scrim.remove();
+            onSaveDefault();
+        });
+
+        btnRow.appendChild(onceBtn);
+        btnRow.appendChild(saveBtn);
+        modal.appendChild(btnRow);
+
+        scrim.addEventListener('click', (e) => {
+            if (e.target === scrim) scrim.remove();
+        });
+
+        scrim.appendChild(modal);
+        document.body.appendChild(scrim);
+    }
+
+    function buildCodecSection(onCodecChange, audioStreams, getAudioStreamIndex, setAudioStreamIndex) {
         const section = document.createElement('div');
         section.style.cssText = 'padding:8px 20px 4px;';
 
@@ -917,8 +1079,41 @@
             };
             section.appendChild(buildCodecRow(VIDEO_CODECS, 'video', t('ChooseVideoCodec'), onSelect('video')));
             section.appendChild(buildCodecRow(AUDIO_CODECS, 'audio', t('ChooseAudioCodec'), onSelect('audio')));
+
+            if (audioStreams && audioStreams.length > 1) {
+                section.appendChild(buildAudioStreamRow(audioStreams, getAudioStreamIndex(), (idx) => {
+                    setAudioStreamIndex(idx);
+                    render();
+                }));
+            }
+
             const hint = buildSoftwareEncodingHint();
             if (hint) section.appendChild(hint);
+
+            // Default status & Save-as-default button
+            const defaultWrap = document.createElement('div');
+            defaultWrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid #2a2a2a;font-size:12px;color:#888;';
+
+            const defaultStatus = document.createElement('span');
+            const savedV = codecTag(VIDEO_CODECS, getSavedCodec('video'));
+            const savedA = codecTag(AUDIO_CODECS, getSavedCodec('audio'));
+            defaultStatus.textContent = `Default: ${savedV} · ${savedA}`;
+
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            const isDef = isCurrentSelectionDefault();
+            saveBtn.style.cssText = 'background:transparent;border:1px solid ' + (isDef ? '#444' : '#00a4dc') + ';'
+                + 'color:' + (isDef ? '#777' : '#00a4dc') + ';padding:3px 10px;border-radius:12px;font-size:12px;cursor:' + (isDef ? 'default' : 'pointer') + ';font-family:inherit;';
+            saveBtn.textContent = isDef ? `✓ ${t('SavedAsDefault')}` : `★ ${t('SaveAsDefault')}`;
+            if (!isDef) {
+                saveBtn.addEventListener('click', () => {
+                    saveCurrentCodecsAsDefault();
+                    render();
+                });
+            }
+            defaultWrap.appendChild(defaultStatus);
+            defaultWrap.appendChild(saveBtn);
+            section.appendChild(defaultWrap);
         };
 
         render();
@@ -932,6 +1127,10 @@
 
         // Ensure strings are loaded before rendering UI
         if (stringsPromise) await stringsPromise;
+
+        // Reset to user's saved defaults when opening a sheet
+        selectedVideoCodec = resolveCodecPreference('video', STORAGE_VIDEO_CODEC, DEFAULT_VIDEO_CODEC);
+        selectedAudioCodec = resolveCodecPreference('audio', STORAGE_AUDIO_CODEC, DEFAULT_AUDIO_CODEC);
 
         const metadataPromise = itemMetadata(itemId);
 
@@ -977,6 +1176,11 @@
         }
 
         const source = item && item.MediaSources && item.MediaSources[0];
+        const mediaStreams = (source && Array.isArray(source.MediaStreams)) ? source.MediaStreams : [];
+        const audioStreams = mediaStreams.filter(s => s.Type === 'Audio');
+        const defaultAudioStream = audioStreams.find(s => s.IsDefault) || audioStreams[0];
+        let selectedAudioStreamIndex = defaultAudioStream ? defaultAudioStream.Index : null;
+
         // Filtered on the H.264-calibrated base bitrate so the set of rungs on offer stays
         // stable when the codec changes — only their encoder targets move.
         const tiers = source && source.Bitrate
@@ -985,6 +1189,28 @@
 
         const tierList = document.createElement('div');
 
+        const startDownload = (bitrate) => {
+            const videoCodec = selectedVideoCodec;
+            const audioCodec = selectedAudioCodec;
+            const audioStreamIndex = selectedAudioStreamIndex;
+
+            const executeDownload = () => {
+                scrim.remove();
+                onTranscodeMenuClick(bitrate, item.Id || itemId, item, videoCodec, audioCodec, audioStreamIndex);
+            };
+
+            if (isCurrentSelectionDefault()) {
+                executeDownload();
+            } else {
+                showSaveDefaultPrompt(videoCodec, audioCodec, () => {
+                    saveCurrentCodecsAsDefault();
+                    executeDownload();
+                }, () => {
+                    executeDownload();
+                });
+            }
+        };
+
         const renderTiers = () => {
             tierList.textContent = '';
             const factor = videoCodecFactor(selectedVideoCodec);
@@ -992,8 +1218,7 @@
             for (const tier of tiers) {
                 const bitrate = scaleBitrate(tier.bitrate, factor);
                 const btn = makeMenuItem('video_settings', `${tier.resolution} · ${formatBitrate(bitrate)}`, () => {
-                    scrim.remove();
-                    onTranscodeMenuClick(bitrate, item.Id || itemId, item);
+                    startDownload(bitrate);
                 });
                 tierList.appendChild(btn);
             }
@@ -1006,10 +1231,14 @@
             }
         };
 
-        // Only offered when the server told us what it can encode; otherwise the flow stays
-        // exactly as it was, on H.264/AAC.
+        // Offered when codec capabilities resolved (either probed from server or fallback profile)
         if (codecCapabilitiesResolved) {
-            sheet.insertBefore(buildCodecSection(renderTiers), header);
+            sheet.insertBefore(buildCodecSection(
+                renderTiers,
+                audioStreams,
+                () => selectedAudioStreamIndex,
+                (idx) => { selectedAudioStreamIndex = idx; }
+            ), header);
         }
 
         // Said before the choice, not after: picking a tier in the app leaves for the browser
@@ -1027,22 +1256,20 @@
 
     // --- Download actions ---
 
-    function onTranscodeMenuClick(bitrate, itemId, item) {
+    function onTranscodeMenuClick(bitrate, itemId, item, videoCodec, audioCodec, audioStreamIndex) {
         if (!item) return;
-        // Captured now: the sheet is gone, but the selection must not drift before the
-        // ApiClient callback runs.
-        const videoCodec = selectedVideoCodec;
-        const audioCodec = selectedAudioCodec;
         getApiClient(0, 5, (client) => {
             const token = client.accessToken();
             const baseUrl = client.serverAddress() || window.location.origin;
-            addToQueue(baseUrl, itemId, token, bitrate, item, videoCodec, audioCodec);
+            const authHeaders = getAuthHeaders(client);
+            addToQueue(baseUrl, itemId, token, authHeaders, bitrate, item, videoCodec, audioCodec, audioStreamIndex);
         });
     }
 
-    function addToQueue(baseUrl, itemId, token, selectedBitrate, item, videoCodec, audioCodec) {
-        const mediaSourceId = item.MediaSources && item.MediaSources[0] && item.MediaSources[0].Id
-            ? item.MediaSources[0].Id
+    function addToQueue(baseUrl, itemId, token, authHeaders, selectedBitrate, item, videoCodec, audioCodec, audioStreamIndex) {
+        const source = item.MediaSources && item.MediaSources[0];
+        const mediaSourceId = source && source.Id
+            ? source.Id
             : itemId;
         // Identifies the server-side transcoding job so it can be killed (and its temp file
         // deleted) once the download ends. Both are per-download and synthetic: the pair also
@@ -1051,9 +1278,10 @@
         // session's transcoding info in the dashboard.
         const playSessionId = randomId();
         const deviceId = `transcode-downloader-${playSessionId}`;
+        const audioStreamParam = audioStreamIndex != null ? `&AudioStreamIndex=${audioStreamIndex}` : '';
         // A single codec is sent deliberately: a comma-separated list lets the server silently
         // downgrade while the UI still claims the codec the user picked.
-        const url = `${baseUrl}/Videos/${itemId}/stream.mp4?MediaSourceId=${mediaSourceId}&VideoBitrate=${selectedBitrate}&VideoCodec=${videoCodec}&AudioCodec=${audioCodec}&MaxAudioChannels=2&allowVideoStreamCopy=false&allowAudioStreamCopy=false&Static=false&PlaySessionId=${playSessionId}&DeviceId=${encodeURIComponent(deviceId)}&api_key=${token}`;
+        const url = `${baseUrl}/Videos/${itemId}/stream.mp4?MediaSourceId=${mediaSourceId}&VideoBitrate=${selectedBitrate}&VideoCodec=${videoCodec}&AudioCodec=${audioCodec}&MaxAudioChannels=2&allowVideoStreamCopy=false&allowAudioStreamCopy=false&Static=false&PlaySessionId=${playSessionId}&DeviceId=${encodeURIComponent(deviceId)}${audioStreamParam}&api_key=${token}`;
         // Nothing below this point applies inside the Android app: there is no queue entry, no
         // progress and no filename of ours once the browser owns the transfer.
         if (isAndroidAppWebView()) {
@@ -1065,7 +1293,16 @@
 
         const videoTag = codecTag(VIDEO_CODECS, videoCodec);
         const audioTag = codecTag(AUDIO_CODECS, audioCodec);
-        const suffix = ` [${videoTag} ${formatBitrate(selectedBitrate).replace(' ', '')} ${audioTag}]`;
+
+        let trackTag = '';
+        if (audioStreamIndex != null && source && Array.isArray(source.MediaStreams)) {
+            const stream = source.MediaStreams.find(s => s.Index === audioStreamIndex && s.Type === 'Audio');
+            if (stream && (stream.Language || stream.Title)) {
+                trackTag = ` ${stream.Language ? stream.Language.toUpperCase() : stream.Title}`;
+            }
+        }
+
+        const suffix = ` [${videoTag} ${formatBitrate(selectedBitrate).replace(' ', '')} ${audioTag}${trackTag}]`;
 
         const pad = (n) => String(n).padStart(2, '0');
         let filename;
@@ -1086,9 +1323,11 @@
             estimatedBytes,
             url,
             stopUrl,
+            authHeaders,
             videoCodec,
             audioCodec,
-            codecLabel: `${videoTag} · ${formatBitrate(selectedBitrate)} · ${audioTag}`,
+            audioStreamIndex,
+            codecLabel: `${videoTag} · ${formatBitrate(selectedBitrate)} · ${audioTag}${trackTag}`,
             receivedBytes: 0,
             abortController: null,
             status: 'waiting',

@@ -33,8 +33,16 @@ when the one ahead of it finishes.
 ### Choosing a codec
 
 The picker offers **H.264 (AVC)**, **HEVC (H.265)** and **AV1** for video, and **AAC** or
-**Opus** for audio. H.264/AAC is the default and plays everywhere. Your last choice is
-remembered in the browser, so you only pick it once.
+**Opus** for audio. H.264/AAC is the standard default and plays everywhere. You can save your
+preferred codec pairing as default, or pick different codecs for individual downloads without
+overwriting your defaults: whenever you download with different codecs, a prompt asks if you
+want to save them as default or use them just this once.
+
+### Choosing an audio track
+
+When a movie or episode has multiple audio tracks (e.g. different languages or commentary
+tracks), an **Audio track** selector appears in the quality sheet so you can choose which stream
+to transcode into the download.
 
 The bitrate tiers are **codec-relative**: they are calibrated for H.264, and HEVC (≈ 65%) and
 AV1 (≈ 50%) targets are scaled down so a given rung means roughly the same picture quality on

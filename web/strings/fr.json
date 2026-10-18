@@ -15,5 +15,13 @@
     "DownloadFailedStatus": "Téléchargement échoué (HTTP {status}).",
     "BrowserHandoffHint": "L'application Jellyfin Android ne peut pas enregistrer les téléchargements elle-même, ceci s'ouvre donc dans votre navigateur. Le fichier est enregistré sous le nom stream.mp4 — renommez-le ensuite.",
     "BrowserHandoffStarted": "Transmis à votre navigateur — consultez ses téléchargements.",
-    "BrowserHandoffFailed": "Impossible d'ouvrir votre navigateur."
+    "BrowserHandoffFailed": "Impossible d'ouvrir votre navigateur.",
+    "SaveAsDefault": "Enregistrer par défaut",
+    "SavedAsDefault": "Enregistré par défaut !",
+    "SaveAsDefaultPromptTitle": "Enregistrer par défaut ?",
+    "SaveAsDefaultPromptText": "Vous avez sélectionné {video} / {audio} pour ce téléchargement. Voulez-vous enregistrer cette sélection comme valeur par défaut pour les futurs téléchargements ?",
+    "SaveAsDefaultBtn": "Enregistrer par défaut",
+    "JustThisOnceBtn": "Seulement cette fois",
+    "AudioTrack": "Piste audio",
+    "DefaultTrack": "Par défaut"
 }

@@ -15,5 +15,13 @@
     "DownloadFailedStatus": "Download mislukt (HTTP {status}).",
     "BrowserHandoffHint": "De Jellyfin Android-app kan downloads niet zelf opslaan, daarom wordt dit in je browser geopend. Het bestand wordt opgeslagen als stream.mp4 — hernoem het daarna.",
     "BrowserHandoffStarted": "Doorgegeven aan je browser — kijk daar bij de downloads.",
-    "BrowserHandoffFailed": "Kon je browser niet openen."
+    "BrowserHandoffFailed": "Kon je browser niet openen.",
+    "SaveAsDefault": "Als standaard opslaan",
+    "SavedAsDefault": "Opgeslagen als standaard!",
+    "SaveAsDefaultPromptTitle": "Als standaard opslaan?",
+    "SaveAsDefaultPromptText": "Je hebt {video} / {audio} geselecteerd voor deze download. Wil je deze selectie opslaan als standaard voor toekomstige downloads?",
+    "SaveAsDefaultBtn": "Als standaard opslaan",
+    "JustThisOnceBtn": "Alleen dit keer",
+    "AudioTrack": "Audiospoor",
+    "DefaultTrack": "Standaard"
 }

@@ -15,5 +15,13 @@
     "DownloadFailedStatus": "Download fehlgeschlagen (HTTP {status}).",
     "BrowserHandoffHint": "Die Jellyfin-Android-App kann Downloads nicht selbst speichern, daher wird dies im Browser geöffnet. Die Datei wird als stream.mp4 gespeichert — bitte danach umbenennen.",
     "BrowserHandoffStarted": "An den Browser übergeben — dort in den Downloads nachsehen.",
-    "BrowserHandoffFailed": "Der Browser konnte nicht geöffnet werden."
+    "BrowserHandoffFailed": "Der Browser konnte nicht geöffnet werden.",
+    "SaveAsDefault": "Als Standard speichern",
+    "SavedAsDefault": "Als Standard gespeichert!",
+    "SaveAsDefaultPromptTitle": "Als Standard speichern?",
+    "SaveAsDefaultPromptText": "Du hast {video} / {audio} für diesen Download ausgewählt. Möchtest du diese Auswahl als Standard für zukünftige Downloads speichern?",
+    "SaveAsDefaultBtn": "Als Standard speichern",
+    "JustThisOnceBtn": "Nur dieses Mal",
+    "AudioTrack": "Tonspur",
+    "DefaultTrack": "Standard"
 }

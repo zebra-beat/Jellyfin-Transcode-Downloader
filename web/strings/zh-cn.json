@@ -15,5 +15,13 @@
     "DownloadFailedStatus": "下载失败（HTTP {status}）。",
     "BrowserHandoffHint": "Jellyfin 安卓客户端无法自行保存下载，因此将在浏览器中打开。文件会保存为 stream.mp4 — 请在下载后重命名。",
     "BrowserHandoffStarted": "已交给浏览器 — 请在浏览器的下载列表中查看。",
-    "BrowserHandoffFailed": "无法打开浏览器。"
+    "BrowserHandoffFailed": "无法打开浏览器。",
+    "SaveAsDefault": "设为默认",
+    "SavedAsDefault": "已设为默认！",
+    "SaveAsDefaultPromptTitle": "设为默认设置？",
+    "SaveAsDefaultPromptText": "您本次下载选择了 {video} / {audio}。是否将其设为后续下载的默认编解码器？",
+    "SaveAsDefaultBtn": "设为默认",
+    "JustThisOnceBtn": "仅本次使用",
+    "AudioTrack": "音轨",
+    "DefaultTrack": "默认"
 }

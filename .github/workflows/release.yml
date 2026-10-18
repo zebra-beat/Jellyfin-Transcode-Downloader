@@ -11,6 +11,7 @@ name: Release
 # entry committed back to `main`.
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
