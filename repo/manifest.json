@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/zebra-beat/Jellyfin-Transcode-Downloader/main/logo.png",
     "versions": [
       {
+        "version": "1.0.29.0",
+        "changelog": "Add Source resolution (Re-encode) options (Matched quality and Original bitrate) for keeping native 4K/1080p resolution when re-encoding across codecs (e.g. 4K HEVC to 4K AV1, 1080p Blu-ray to AV1), and align quality tiers with source resolution and Jellyfin normalizer thresholds.",
+        "targetAbi": "10.11.8.0",
+        "sourceUrl": "https://github.com/zebra-beat/Jellyfin-Transcode-Downloader/releases/download/v1.0.29/jellyfin-transcode-downloader_1.0.29.zip",
+        "checksum": "ab72118829dd663549763af4d590b37d",
+        "timestamp": "2026-10-18T06:59:34Z"
+      },
+      {
         "version": "1.0.28.0",
         "changelog": "feat: fix 401 on Jellyfin 12.2, add default prompt and audio track selector\n\n- Send X-Emby-Token and MediaBrowser Authorization headers to fix 401 on Jellyfin 12.2+\n- Add fallback capability profile so codec selector is never hidden if server probe fails\n- Prompt to save as default or use just this once when selecting non-default codecs\n- Add audio track / language selector (AudioStreamIndex) when multiple audio streams exist",
         "targetAbi": "10.11.8.0",
