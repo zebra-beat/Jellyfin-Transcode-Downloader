@@ -151,7 +151,7 @@ configuration. If it is unreachable the picker quietly falls back to H.264/AAC o
 
 1. Add this plugin's repository URL under **Dashboard → Plugins → Repositories**:
    ```
-   https://raw.githubusercontent.com/ph15ch/Jellyfin-Transcode-Downloader/main/repo/manifest.json
+   https://raw.githubusercontent.com/zebra-beat/Jellyfin-Transcode-Downloader/main/repo/manifest.json
    ```
 2. Install **Transcode Downloader** from the catalog.
 3. Restart Jellyfin.
@@ -162,7 +162,7 @@ To follow test/pre-release builds, use the testing manifest instead:
 
 1. Add the **testing** repository URL under **Dashboard → Plugins → Repositories**:
    ```
-   https://raw.githubusercontent.com/ph15ch/Jellyfin-Transcode-Downloader/main/repo/manifest-testing.json
+   https://raw.githubusercontent.com/zebra-beat/Jellyfin-Transcode-Downloader/main/repo/manifest-testing.json
    ```
 2. Install **Transcode Downloader** from the catalog.
 3. Restart Jellyfin.
