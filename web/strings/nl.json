@@ -23,5 +23,8 @@
     "SaveAsDefaultBtn": "Als standaard opslaan",
     "JustThisOnceBtn": "Alleen dit keer",
     "AudioTrack": "Audiospoor",
-    "DefaultTrack": "Standaard"
+    "DefaultTrack": "Standaard",
+    "KeepSourceResolution": "Bronresolutie ({resolution})",
+    "OriginalBitrate": "Originele bitrate",
+    "MatchedQuality": "Vergelijkbare kwaliteit"
 }

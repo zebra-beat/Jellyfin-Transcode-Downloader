@@ -23,5 +23,8 @@
     "SaveAsDefaultBtn": "Enregistrer par défaut",
     "JustThisOnceBtn": "Seulement cette fois",
     "AudioTrack": "Piste audio",
-    "DefaultTrack": "Par défaut"
+    "DefaultTrack": "Par défaut",
+    "KeepSourceResolution": "Résolution source ({resolution})",
+    "OriginalBitrate": "Débit d'origine",
+    "MatchedQuality": "Qualité équivalente"
 }

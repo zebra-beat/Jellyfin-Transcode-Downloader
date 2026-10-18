@@ -23,5 +23,8 @@
     "SaveAsDefaultBtn": "Als Standard speichern",
     "JustThisOnceBtn": "Nur dieses Mal",
     "AudioTrack": "Tonspur",
-    "DefaultTrack": "Standard"
+    "DefaultTrack": "Standard",
+    "KeepSourceResolution": "Quellauflösung ({resolution})",
+    "OriginalBitrate": "Original-Bitrate",
+    "MatchedQuality": "Angepasste Qualität"
 }

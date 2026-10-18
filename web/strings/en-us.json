@@ -23,5 +23,8 @@
     "SaveAsDefaultBtn": "Save as default",
     "JustThisOnceBtn": "Just this once",
     "AudioTrack": "Audio track",
-    "DefaultTrack": "Default"
+    "DefaultTrack": "Default",
+    "KeepSourceResolution": "Source resolution ({resolution})",
+    "OriginalBitrate": "Original bitrate",
+    "MatchedQuality": "Matched quality"
 }

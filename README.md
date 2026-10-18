@@ -49,6 +49,23 @@ AV1 (≈ 50%) targets are scaled down so a given rung means roughly the same pic
 every codec. Picking "1080p" on AV1 therefore produces a smaller file than on H.264, not a
 worse-looking one.
 
+### Keeping source resolution (Re-encoding)
+
+At the top of the quality list, the picker always includes **Source resolution** option(s) so you
+can re-encode a file at its native resolution without downscaling — for example, converting a
+4K HEVC file to 4K AV1, or a 1080p H.264 Blu-ray to 1080p AV1:
+
+- **Matched quality** (shown when the target codec is more efficient than the source or allows a
+  smaller file at the same visual quality): scales the source bitrate by the codec efficiency
+  ratio while keeping it above Jellyfin's resolution threshold so the native resolution is
+  preserved.
+- **Original bitrate**: re-encodes at the source file's full bitrate, which also guarantees
+  Jellyfin preserves the exact native dimensions even on low-bitrate 4K/1080p sources.
+
+Stepped quality tiers below the divider are automatically clamped to the source video's native
+resolution (so a high-bitrate 1080p Blu-ray offers high-bitrate 1080p tiers rather than
+mislabelling them as 1440p or 2160p).
+
 A codec is shown greyed out, with the reason spelled out underneath, when:
 
 - **it isn't supported by this server's FFmpeg** — Jellyfin resolves e.g. AV1 to `libsvtav1`,

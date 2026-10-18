@@ -23,5 +23,8 @@
     "SaveAsDefaultBtn": "设为默认",
     "JustThisOnceBtn": "仅本次使用",
     "AudioTrack": "音轨",
-    "DefaultTrack": "默认"
+    "DefaultTrack": "默认",
+    "KeepSourceResolution": "源分辨率 ({resolution})",
+    "OriginalBitrate": "原始码率",
+    "MatchedQuality": "同等画质"
 }

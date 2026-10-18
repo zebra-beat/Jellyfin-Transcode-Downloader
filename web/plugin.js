@@ -1,23 +1,24 @@
 (() => {
     const SUPPORTED_LOCALES = ['en-us', 'de', 'fr', 'es', 'zh-cn', 'nl'];
 
-    // Bitrate rungs, calibrated for H.264. Other codecs scale these by their efficiency
-    // factor so a given rung means roughly the same picture quality across codecs.
+    // Bitrate rungs, calibrated for H.264 and aligned with Jellyfin's ResolutionNormalizer
+    // thresholds (>28M -> 2160p, >13.5M -> 1440p, >6M -> 1080p, >3M -> 720p).
     const QUALITY_TIERS = [
-        { resolution: '2160p', bitrate: 120_000_000 },
-        { resolution: '2160p', bitrate:  80_000_000 },
-        { resolution: '2160p', bitrate:  60_000_000 },
-        { resolution: '2160p', bitrate:  40_000_000 },
-        { resolution: '2160p', bitrate:  20_000_000 },
-        { resolution: '1440p', bitrate:  15_000_000 },
-        { resolution: '1440p', bitrate:  10_000_000 },
-        { resolution: '1080p', bitrate:   8_000_000 },
-        { resolution: '1080p', bitrate:   6_000_000 },
-        { resolution: '720p',  bitrate:   4_000_000 },
-        { resolution: '720p',  bitrate:   3_000_000 },
-        { resolution: '720p',  bitrate:   1_500_000 },
-        { resolution: '480p',  bitrate:     720_000 },
-        { resolution: '360p',  bitrate:     420_000 },
+        { resolution: '2160p', maxWidth: 3840, bitrate: 120_000_000 },
+        { resolution: '2160p', maxWidth: 3840, bitrate:  80_000_000 },
+        { resolution: '2160p', maxWidth: 3840, bitrate:  60_000_000 },
+        { resolution: '2160p', maxWidth: 3840, bitrate:  40_000_000 },
+        { resolution: '2160p', maxWidth: 3840, bitrate:  29_000_000 },
+        { resolution: '1440p', maxWidth: 2560, bitrate:  20_000_000 },
+        { resolution: '1440p', maxWidth: 2560, bitrate:  15_000_000 },
+        { resolution: '1080p', maxWidth: 1920, bitrate:  12_000_000 },
+        { resolution: '1080p', maxWidth: 1920, bitrate:   8_000_000 },
+        { resolution: '1080p', maxWidth: 1920, bitrate:   6_200_000 },
+        { resolution: '720p',  maxWidth: 1280, bitrate:   4_000_000 },
+        { resolution: '720p',  maxWidth: 1280, bitrate:   3_200_000 },
+        { resolution: '720p',  maxWidth: 1280, bitrate:   1_500_000 },
+        { resolution: '480p',  maxWidth:  768, bitrate:     720_000 },
+        { resolution: '360p',  maxWidth:  640, bitrate:     420_000 },
     ];
 
     // --- Codecs ---
@@ -69,6 +70,28 @@
         return codec ? codec.factor : 1;
     }
 
+    // Mirrors Jellyfin's EncodingHelper.GetVideoBitrateScaleFactor so we can convert
+    // a source video stream's bitrate back to its H.264-equivalent base bitrate.
+    function sourceVideoCodecFactor(codecName) {
+        if (!codecName) return 1;
+        const c = String(codecName).toLowerCase();
+        if (c === 'av1') return 0.5;
+        if (c === 'hevc' || c === 'h265' || c === 'vp9') return 0.6;
+        return 1;
+    }
+
+    function getSourceResolutionInfo(videoStream) {
+        if (!videoStream || (!videoStream.Width && !videoStream.Height)) return null;
+        const w = videoStream.Width || 0;
+        const h = videoStream.Height || 0;
+        if (w >= 3200 || h >= 1800) return { label: '2160p', maxWidth: 3840, minH264Bitrate: 28_500_000 };
+        if (w >= 2200 || h >= 1300) return { label: '1440p', maxWidth: 2560, minH264Bitrate: 14_000_000 };
+        if (w >= 1600 || h >= 900)  return { label: '1080p', maxWidth: 1920, minH264Bitrate:  6_200_000 };
+        if (w >= 1100 || h >= 600)  return { label: '720p',  maxWidth: 1280, minH264Bitrate:  3_200_000 };
+        if (w >= 700  || h >= 420)  return { label: '480p',  maxWidth:  768, minH264Bitrate:    740_000 };
+        return { label: '360p', maxWidth: 640, minH264Bitrate: 370_000 };
+    }
+
     // Round a scaled bitrate to a readable step so codec-relative labels stay legible.
     // With factor 1 (H.264) every tier round-trips to its original value.
     function scaleBitrate(baseBitrate, factor) {
@@ -112,6 +135,9 @@
         JustThisOnceBtn: 'Just this once',
         AudioTrack: 'Audio track',
         DefaultTrack: 'Default',
+        KeepSourceResolution: 'Source resolution ({resolution})',
+        OriginalBitrate: 'Original bitrate',
+        MatchedQuality: 'Matched quality',
     };
 
     // Populated by initStrings(); null until loaded.
@@ -1177,15 +1203,20 @@
 
         const source = item && item.MediaSources && item.MediaSources[0];
         const mediaStreams = (source && Array.isArray(source.MediaStreams)) ? source.MediaStreams : [];
+        const videoStream = mediaStreams.find(s => s.Type === 'Video') || null;
         const audioStreams = mediaStreams.filter(s => s.Type === 'Audio');
         const defaultAudioStream = audioStreams.find(s => s.IsDefault) || audioStreams[0];
         let selectedAudioStreamIndex = defaultAudioStream ? defaultAudioStream.Index : null;
 
-        // Filtered on the H.264-calibrated base bitrate so the set of rungs on offer stays
-        // stable when the codec changes — only their encoder targets move.
-        const tiers = source && source.Bitrate
-            ? QUALITY_TIERS.filter(tier => tier.bitrate < source.Bitrate)
-            : QUALITY_TIERS;
+        const sourceRes = getSourceResolutionInfo(videoStream);
+        const rawSourceBitrate = Math.max(
+            (videoStream && videoStream.BitRate) || 0,
+            (source && source.Bitrate) || 0
+        );
+        const srcCodecFactor = sourceVideoCodecFactor(videoStream && videoStream.Codec);
+        const sourceH264Bitrate = rawSourceBitrate
+            ? Math.round(rawSourceBitrate / srcCodecFactor)
+            : 0;
 
         const tierList = document.createElement('div');
 
@@ -1214,16 +1245,68 @@
         const renderTiers = () => {
             tierList.textContent = '';
             const factor = videoCodecFactor(selectedVideoCodec);
+            let hasOptions = false;
+            let ceilingBitrate = Infinity;
 
-            for (const tier of tiers) {
+            if (rawSourceBitrate > 0) {
+                const resLabel = sourceRes ? sourceRes.label : 'Original';
+                const keepResTitle = t('KeepSourceResolution').replace('{resolution}', resLabel);
+
+                let matchedBitrate = scaleBitrate(sourceH264Bitrate, factor);
+                if (sourceRes) {
+                    const minForRes = scaleBitrate(sourceRes.minH264Bitrate, factor);
+                    matchedBitrate = rawSourceBitrate >= minForRes
+                        ? Math.min(rawSourceBitrate, Math.max(matchedBitrate, minForRes))
+                        : rawSourceBitrate;
+                } else {
+                    matchedBitrate = Math.min(rawSourceBitrate, matchedBitrate);
+                }
+
+                ceilingBitrate = Math.min(rawSourceBitrate, matchedBitrate);
+
+                if (matchedBitrate < rawSourceBitrate * 0.92) {
+                    const matchedBtn = makeMenuItem(
+                        'high_quality',
+                        `${keepResTitle} · ${formatBitrate(matchedBitrate)} (${t('MatchedQuality')})`,
+                        () => startDownload(matchedBitrate)
+                    );
+                    tierList.appendChild(matchedBtn);
+
+                    const origBtn = makeMenuItem(
+                        'high_quality',
+                        `${keepResTitle} · ${formatBitrate(rawSourceBitrate)} (${t('OriginalBitrate')})`,
+                        () => startDownload(rawSourceBitrate)
+                    );
+                    tierList.appendChild(origBtn);
+                } else {
+                    const origBtn = makeMenuItem(
+                        'high_quality',
+                        `${keepResTitle} · ${formatBitrate(rawSourceBitrate)}`,
+                        () => startDownload(rawSourceBitrate)
+                    );
+                    tierList.appendChild(origBtn);
+                }
+
+                const divider = document.createElement('div');
+                divider.style.cssText = 'height:1px;background:#2a2a2a;margin:4px 20px;';
+                tierList.appendChild(divider);
+                hasOptions = true;
+            }
+
+            for (const tier of QUALITY_TIERS) {
                 const bitrate = scaleBitrate(tier.bitrate, factor);
-                const btn = makeMenuItem('video_settings', `${tier.resolution} · ${formatBitrate(bitrate)}`, () => {
+                if (rawSourceBitrate > 0 && bitrate >= ceilingBitrate) continue;
+                const effectiveRes = (sourceRes && tier.maxWidth > sourceRes.maxWidth)
+                    ? sourceRes.label
+                    : tier.resolution;
+                const btn = makeMenuItem('video_settings', `${effectiveRes} · ${formatBitrate(bitrate)}`, () => {
                     startDownload(bitrate);
                 });
                 tierList.appendChild(btn);
+                hasOptions = true;
             }
 
-            if (tiers.length === 0) {
+            if (!hasOptions) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'padding:16px 20px;color:#aaa;font-size:14px;';
                 empty.textContent = t('NoTranscodeOptions');
